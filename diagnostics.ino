@@ -3,7 +3,7 @@
 #include <Servo.h>
 
 #include <SPI.h>
-//#include <MFRC522.h>
+#include <MFRC522.h>
 
 
 // =====================================================
@@ -47,7 +47,7 @@ Servo puerta;
 // RFID RC522
 // =====================================================
 
-//MFRC522 rfid(RFID_SS, RFID_RST);
+MFRC522 rfid(RFID_SS, RFID_RST);
 
 
 // =====================================================
@@ -225,82 +225,82 @@ void sonidoAmigable()
 // CONVERTIR UID RFID A TEXTO
 // =====================================================
 
-//String obtenerUID()
-//{
-//  String uid = "";
-//
-//  for (byte i = 0; i < rfid.uid.size; i++)
-//  {
-    // Agregar cero delante si el byte es menor a 0x10
-//    if (rfid.uid.uidByte[i] < 0x10)
-//    {
-//      uid += "0";
-//    }
+String obtenerUID()
+{
+  String uid = "";
 
-//    uid += String(rfid.uid.uidByte[i], HEX);
+  for (byte i = 0; i < rfid.uid.size; i++)
+  {
+    // Agregar cero delante si el byte es menor a 0x10
+    if (rfid.uid.uidByte[i] < 0x10)
+    {
+      uid += "0";
+    }
+
+    uid += String(rfid.uid.uidByte[i], HEX);
 
     // Separar bytes con :
-//    if (i < rfid.uid.size - 1)
-//    {
-//      uid += ":";
-//    }
-//  }
+    if (i < rfid.uid.size - 1)
+    {
+      uid += ":";
+    }
+  }
 
-//  uid.toUpperCase();
+  uid.toUpperCase();
 
-//  return uid;
-//}
+  return uid;
+}
 
 
 // =====================================================
 // REVISAR SI HAY UNA TARJETA RFID
 // =====================================================
 
-//void revisarRFID()
-//{
+void revisarRFID()
+{
   // ¿Hay una nueva tarjeta?
-//  if (!rfid.PICC_IsNewCardPresent())
-//  {
-//    return;
-//  }
+  if (!rfid.PICC_IsNewCardPresent())
+  {
+    return;
+  }
 
   // ¿Se puede leer?
-//  if (!rfid.PICC_ReadCardSerial())
-//  {
-//    return;
-//  }
+  if (!rfid.PICC_ReadCardSerial())
+  {
+    return;
+  }
 
 
   // ===================================================
   // OBTENER UID
   // ===================================================
 
-//  String uid = obtenerUID();
+  String uid = obtenerUID();
 
 
   // ===================================================
   // MOSTRAR POR SERIAL
   // ===================================================
 
-//  Serial.println();
-//  Serial.println("------------------------------");
-//  Serial.println(" TARJETA RFID DETECTADA");
-//  Serial.println("------------------------------");
+  Serial.println();  
+  Serial.println("------------------------------");
+  Serial.println(" TARJETA RFID DETECTADA");
+  Serial.println("------------------------------");
 
-//  Serial.print("UID: ");
- // Serial.println(uid);
+  Serial.print("UID: ");
+  Serial.println(uid);
 
 
   // ===================================================
   // MOSTRAR EN LCD
   // ===================================================
 
-//  lcd.clear();
+  lcd.clear();
 
-//  lcd.setCursor(0, 0);
-//  lcd.print("RFID DETECTADO");
+  lcd.setCursor(0, 0);
+  lcd.print("RFID DETECTADO");
 
-//  lcd.setCursor(0, 1);
+  lcd.setCursor(0, 1);
 
   /*
      El LCD tiene solamente 16 caracteres.
@@ -311,51 +311,51 @@ void sonidoAmigable()
      Por lo que cabe perfectamente.
   */
 
-  //if (uid.length() <= 16)
-  //{
-  //  lcd.print(uid);
-  //}
-  //else
-  //{
+  if (uid.length() <= 16)
+  {
+    lcd.print(uid);
+  }
+  else
+  {
     // Si encontramos una tarjeta con UID más largo,
     // mostramos solamente los primeros 16 caracteres.
-  //  lcd.print(uid.substring(0, 16));
- // }
+    lcd.print(uid.substring(0, 16));
+  }
 
 
   // ===================================================
   // FEEDBACK
   // ===================================================
 
-//  encenderLED(0);
+  encenderLED(0);
 
-//  sonidoAmigable();
+  sonidoAmigable();
 
-//  delay(1500);
+  delay(1500);
 
-//  apagarLEDs();
+  apagarLEDs();
 
 
   // ===================================================
   // TERMINAR COMUNICACION CON TARJETA
   // ===================================================
 
-//  rfid.PICC_HaltA();
-//  rfid.PCD_StopCrypto1();
+  rfid.PICC_HaltA();
+  rfid.PCD_StopCrypto1();
 
 
   // ===================================================
   // REGRESAR A PANTALLA PRINCIPAL
   // ===================================================
 
-//  lcd.clear();
+  lcd.clear();
 
-//  lcd.setCursor(0, 0);
- // lcd.print("ACERQUE TARJETA");
+  lcd.setCursor(0, 0);
+  lcd.print("ACERQUE TARJETA");
 
-//  lcd.setCursor(0, 1);
-//  lcd.print("O USE KEYPAD");
-//}
+  lcd.setCursor(0, 1);
+  lcd.print("O USE KEYPAD");
+}
 
 // =====================================================
 // PRUEBA LCD
