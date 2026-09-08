@@ -676,12 +676,12 @@ void setup()
      SCK  = D13
   */
 
- // SPI.begin();
+  SPI.begin();
 
   // Inicializar RC522
- // rfid.PCD_Init();
+  rfid.PCD_Init();
 
- // Serial.println("RC522 inicializado");
+  Serial.println("RC522 inicializado");
 
 
   // ===================================================
@@ -724,7 +724,7 @@ void loop()
   // REVISAR RFID
   // ===================================================
 
-  //revisarRFID();
+  revisarRFID();
 
 
   // ===================================================
