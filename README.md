@@ -8,8 +8,6 @@ El objetivo es construir progresivamente un **Mini Sistema Computacional de Cont
 
 El proyecto será desarrollado de forma incremental durante los laboratorios.
 
----
-
 ## Objetivo del proyecto
 
 Construir un sistema de control de acceso capaz de identificar a un usuario, solicitar autenticación y controlar físicamente el acceso mediante diferentes periféricos conectados al Arduino.
@@ -25,8 +23,6 @@ El sistema final integrará componentes como:
 * Registro de desplazamiento 74HC595
 
 Durante el desarrollo podrán incorporarse otros sensores o dispositivos dependiendo de los requerimientos de cada etapa.
-
----
 
 ## Funcionamiento general
 
@@ -58,7 +54,6 @@ Servo / mecanismo de apertura
 
 Cada laboratorio agregará nuevas capacidades al sistema.
 
----
 
 ## Estructura del repositorio
 
@@ -100,5 +95,3 @@ Incluye piezas para la carcasa, puerta, soportes y mecanismo asociado al servo.
 ### `pinout.pdf`
 
 Diagrama de referencia para las conexiones utilizadas en el proyecto.
-
----
