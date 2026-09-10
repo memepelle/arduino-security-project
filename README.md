@@ -24,37 +24,6 @@ El sistema final integrará componentes como:
 
 Durante el desarrollo podrán incorporarse otros sensores o dispositivos dependiendo de los requerimientos de cada etapa.
 
-## Funcionamiento general
-
-El sistema deberá implementar progresivamente un flujo similar al siguiente:
-
-```text
-Usuario
-   │
-   ▼
-Tarjeta RFID
-   │
-   ▼
-Identificación
-   │
-   ▼
-Ingreso de PIN
-   │
-   ▼
-Validación
-   │
-   ├──── Acceso incorrecto
-   │
-   ▼
-Acceso autorizado
-   │
-   ▼
-Servo / mecanismo de apertura
-```
-
-Cada laboratorio agregará nuevas capacidades al sistema.
-
-
 ## Estructura del repositorio
 
 ```text
