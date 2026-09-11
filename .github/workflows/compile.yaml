@@ -33,6 +33,7 @@ jobs:
           # Carpeta donde se encuentra base.ino
           sketch-paths: |
             - base
+	    - diagnostics
 
           # Librerías externas utilizadas por el proyecto
           libraries: |
