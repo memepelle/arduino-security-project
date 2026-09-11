@@ -1,0 +1,41 @@
+name: Arduino Compile
+
+# Ejecutar la validación cuando se crea o actualiza
+# un Pull Request hacia main.
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  compile:
+    name: Compile Arduino Uno
+    runs-on: ubuntu-latest
+
+    steps:
+
+      # --------------------------------------------------
+      # 1. Descargar el repositorio
+      # --------------------------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # --------------------------------------------------
+      # 2. Compilar el proyecto
+      # --------------------------------------------------
+      - name: Compile Arduino sketch
+        uses: arduino/compile-sketches@v1
+        with:
+
+          # Arduino Uno
+          fqbn: arduino:avr:uno
+
+          # Carpeta donde se encuentra base.ino
+          sketch-paths: |
+            - base
+
+          # Librerías externas utilizadas por el proyecto
+          libraries: |
+            - name: MFRC522
+            - name: Keypad
+            - name: LiquidCrystal I2C
