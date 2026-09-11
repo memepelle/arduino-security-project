@@ -33,11 +33,11 @@ jobs:
           # Carpeta donde se encuentra base.ino
           sketch-paths: |
             - base
-	        - diagnostics
+			- diagnostics
 
           # Librerías externas utilizadas por el proyecto
           libraries: |
             - name: MFRC522
             - name: Keypad
             - name: LiquidCrystal I2C
-	        - name: Servo
+			- name: Servo
