@@ -39,3 +39,4 @@ jobs:
             - name: MFRC522
             - name: Keypad
             - name: LiquidCrystal I2C
+	    - name: Servo
