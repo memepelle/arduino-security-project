@@ -1,0 +1,64 @@
+#include <SPI.h>
+#include <MFRC522.h>
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+
+#define SS_PIN 10
+#define RST_PIN 9
+
+MFRC522 rfid(SS_PIN, RST_PIN);
+LiquidCrystal_I2C lcd(0x27, 16, 2);   // si no muestra nada, prueba 0x3F
+
+String leerTarjeta() {
+  if (!rfid.PICC_IsNewCardPresent() || !rfid.PICC_ReadCardSerial())
+    return "";
+
+  String uid = "";
+  for (byte i = 0; i < rfid.uid.size; i++) {
+    if (rfid.uid.uidByte[i] < 0x10) uid += "0";
+    uid += String(rfid.uid.uidByte[i], HEX);
+  }
+  uid.toUpperCase();
+  rfid.PICC_HaltA();
+  return uid;
+}
+
+bool tarjetaAutorizada(String uid) {
+  return uid == "A1B2C3D4";   // <-- cambia por el UID de tu tarjeta
+}
+
+void mostrarInicio() {
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("ACERQUE TARJETA");
+}
+
+void setup() {
+  Serial.begin(9600);
+  SPI.begin();
+  rfid.PCD_Init();
+  lcd.init();
+  lcd.backlight();
+  mostrarInicio();
+}
+
+void loop() {
+  String uid = leerTarjeta();
+
+  if (uid != "") {
+    Serial.println(uid);
+
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    if (tarjetaAutorizada(uid)) {
+      lcd.print("ACCESO PERMITIDO");
+    } else {
+      lcd.print("ACCESO DENEGADO");
+    }
+    lcd.setCursor(0, 1);
+    lcd.print(uid);
+
+    delay(2000);
+    mostrarInicio();
+  }
+}

@@ -1,0 +1,337 @@
+#include <SPI.h>
+#include <MFRC522.h>
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include <Keypad.h>
+#include <Servo.h>
+#include <EEPROM.h>
+
+// ----- Pines -----
+#define SS_PIN 10                    // RC522 (el pin RST va conectado a 3.3V)
+const byte PIN_DATOS  = A0;          // 74HC595 DS
+const byte PIN_RELOJ  = A1;          // 74HC595 SHCP
+const byte PIN_LATCH  = A2;          // 74HC595 STCP
+const byte PIN_BUZZER = A3;
+const byte PIN_SERVO  = 9;
+
+MFRC522 rfid(SS_PIN, MFRC522::UNUSED_PIN);
+LiquidCrystal_I2C lcd(0x27, 16, 2);  // si no muestra nada, prueba 0x3F
+Servo puerta;
+
+// ----- Teclado matricial (4 filas x 3 columnas usadas) -----
+// '*' = borrar PIN / cerrar puerta      '#' = confirmar PIN / apagar alarma
+const byte FILAS = 4;
+const byte COLUMNAS = 3;
+char teclas[FILAS][COLUMNAS] = {
+  {'1', '2', '3'},
+  {'4', '5', '6'},
+  {'7', '8', '9'},
+  {'*', '0', '#'}
+};
+byte pinesFilas[FILAS] = {2, 3, 4, 5};
+byte pinesColumnas[COLUMNAS] = {6, 7, 8};
+Keypad teclado = Keypad(makeKeymap(teclas), pinesFilas, pinesColumnas, FILAS, COLUMNAS);
+
+// ----- Estados y su valor binario para el 74HC595 -----
+enum Estado { INICIO, ESPERANDO_RFID, VALIDANDO_RFID, ESPERANDO_PIN,
+              VALIDANDO_PIN, AUTORIZADO, DENEGADO, ALARMA };
+const byte VALOR_LED[] = {
+  0b00000001, 0b00000010, 0b00000100, 0b00001000,
+  0b00010000, 0b00100000, 0b01000000, 0b10000000
+};
+Estado estado = INICIO;
+
+// ----- Usuarios guardados en EEPROM -----
+// Cada registro: UID en hexadecimal (8 caracteres) + PIN (4 digitos)
+struct Usuario {
+  char uid[9];
+  char pin[5];
+};
+const byte EE_MAGIC = 0xA5;
+const int EE_DIR_MAGIC = 0, EE_DIR_CUENTA = 1, EE_DIR_USUARIOS = 2;
+const byte MAX_USUARIOS = 8;
+
+const byte LONG_PIN = 4;
+const byte MAX_INTENTOS = 3;
+const unsigned long TIEMPO_LIMITE = 15000;   // 15 s para ingresar el PIN
+
+String uidLeido = "";
+String pinIngresado = "";
+int usuarioActual = -1;
+byte intentos = 0;
+unsigned long inicioPin = 0;
+bool registroPendiente = false;
+String pinRegistro = "";
+
+// ================= 74HC595 =================
+void enviar595(byte valor) {
+  digitalWrite(PIN_LATCH, LOW);
+  shiftOut(PIN_DATOS, PIN_RELOJ, MSBFIRST, valor);
+  digitalWrite(PIN_LATCH, HIGH);
+}
+
+// Cada cambio de estado actualiza los LEDs
+void cambiarEstado(Estado nuevo) {
+  estado = nuevo;
+  enviar595(VALOR_LED[nuevo]);
+}
+
+// ================= LCD =================
+void mostrarMensaje(const char* l1, const char* l2) {
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print(l1);
+  lcd.setCursor(0, 1);
+  lcd.print(l2);
+}
+
+void mostrarInicio() {
+  mostrarMensaje("CONTROL ACCESO", "PRESENTE TARJETA");
+}
+
+// Muestra "INGRESE SU PIN" y ____ ; cada digito se reemplaza por *
+void mostrarPantallaPin() {
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("INGRESE SU PIN");
+  lcd.setCursor(0, 1);
+  for (byte i = 0; i < LONG_PIN; i++) {
+    lcd.print(i < pinIngresado.length() ? '*' : '_');
+  }
+}
+
+// ================= EEPROM =================
+byte totalUsuarios() {
+  byte n = EEPROM.read(EE_DIR_CUENTA);
+  return n > MAX_USUARIOS ? 0 : n;
+}
+
+int dirUsuario(byte i) { return EE_DIR_USUARIOS + i * sizeof(Usuario); }
+
+void leerUsuario(byte i, Usuario &u) { EEPROM.get(dirUsuario(i), u); }
+
+void guardarUsuario(byte i, const Usuario &u) { EEPROM.put(dirUsuario(i), u); }
+
+// Solo en el primer arranque carga dos usuarios de ejemplo
+void inicializarEEPROM() {
+  if (EEPROM.read(EE_DIR_MAGIC) == EE_MAGIC) return;
+  Usuario u1 = {"53E0D906", "1234"};   // <-- cambia por tus UIDs y PINs
+  Usuario u2 = {"11223344", "4321"};
+  guardarUsuario(0, u1);
+  guardarUsuario(1, u2);
+  EEPROM.update(EE_DIR_CUENTA, 2);
+  EEPROM.update(EE_DIR_MAGIC, EE_MAGIC);
+}
+
+// Devuelve la posicion del usuario, o -1 si no existe
+int buscarUsuario(String uid) {
+  Usuario u;
+  for (byte i = 0; i < totalUsuarios(); i++) {
+    leerUsuario(i, u);
+    if (uid == u.uid) return i;
+  }
+  return -1;
+}
+
+void registrarUsuario(String uid) {
+  byte n = totalUsuarios();
+  registroPendiente = false;
+  if (n >= MAX_USUARIOS) {
+    Serial.println(F("EEPROM llena"));
+    return;
+  }
+  Usuario u;
+  uid.toCharArray(u.uid, sizeof(u.uid));
+  pinRegistro.toCharArray(u.pin, sizeof(u.pin));
+  guardarUsuario(n, u);
+  EEPROM.update(EE_DIR_CUENTA, n + 1);
+  Serial.println(F("Usuario registrado"));
+  mostrarMensaje("TARJETA GUARDADA", "");
+  delay(1500);
+}
+
+// Comandos por monitor serial (9600): ADD 1234 | LIST | CLEAR
+void atenderSerial() {
+  if (!Serial.available()) return;
+  String linea = Serial.readStringUntil('\n');
+  linea.trim();
+  if (linea.startsWith("ADD ") && linea.length() == 8) {
+    pinRegistro = linea.substring(4);
+    registroPendiente = true;
+    Serial.println(F("Presente la tarjeta a registrar"));
+  } else if (linea == "LIST") {
+    Usuario u;
+    for (byte i = 0; i < totalUsuarios(); i++) {
+      leerUsuario(i, u);
+      Serial.print(i);
+      Serial.print(F(": "));
+      Serial.println(u.uid);
+    }
+  } else if (linea == "CLEAR") {
+    EEPROM.update(EE_DIR_CUENTA, 0);
+    Serial.println(F("Usuarios borrados"));
+  }
+}
+
+// ================= RFID =================
+String leerTarjeta() {
+  if (!rfid.PICC_IsNewCardPresent() || !rfid.PICC_ReadCardSerial())
+    return "";
+
+  String uid = "";
+  for (byte i = 0; i < 4; i++) {            // se usan los primeros 4 bytes del UID
+    if (rfid.uid.uidByte[i] < 0x10) uid += "0";
+    uid += String(rfid.uid.uidByte[i], HEX);
+  }
+  uid.toUpperCase();
+  rfid.PICC_HaltA();
+  rfid.PCD_StopCrypto1();
+  return uid;
+}
+
+// ================= PROGRAMA PRINCIPAL =================
+void setup() {
+  Serial.begin(9600);
+  pinMode(PIN_DATOS, OUTPUT);
+  pinMode(PIN_RELOJ, OUTPUT);
+  pinMode(PIN_LATCH, OUTPUT);
+  pinMode(PIN_BUZZER, OUTPUT);
+  digitalWrite(PIN_BUZZER, LOW);
+
+  cambiarEstado(INICIO);
+  lcd.init();
+  lcd.backlight();
+  mostrarMensaje("SISTEMA ACCESO", "INICIANDO...");
+
+  SPI.begin();
+  rfid.PCD_Init();
+  inicializarEEPROM();
+  puerta.attach(PIN_SERVO);
+  puerta.write(0);                          // puerta cerrada
+  delay(1500);
+
+  mostrarInicio();
+  cambiarEstado(ESPERANDO_RFID);
+}
+
+void loop() {
+  atenderSerial();
+
+  switch (estado) {
+
+    case ESPERANDO_RFID: {
+      uidLeido = leerTarjeta();
+      if (uidLeido != "") {
+        Serial.println(uidLeido);
+        if (registroPendiente) {
+          registrarUsuario(uidLeido);
+          mostrarInicio();
+        } else {
+          cambiarEstado(VALIDANDO_RFID);
+        }
+      }
+      break;
+    }
+
+    case VALIDANDO_RFID: {
+      usuarioActual = buscarUsuario(uidLeido);
+      intentos = 0;
+      if (usuarioActual >= 0) {
+        pinIngresado = "";
+        mostrarPantallaPin();
+        inicioPin = millis();
+        cambiarEstado(ESPERANDO_PIN);
+      } else {
+        mostrarMensaje("TARJETA INVALIDA", "ACCESO DENEGADO");
+        cambiarEstado(DENEGADO);
+      }
+      break;
+    }
+
+    case ESPERANDO_PIN: {
+      char tecla = teclado.getKey();
+
+      if (tecla) {
+        inicioPin = millis();
+
+        if (tecla >= '0' && tecla <= '9') {          // solo digitos numericos
+          if (pinIngresado.length() < LONG_PIN) {
+            pinIngresado += tecla;
+            mostrarPantallaPin();
+          }
+        } else if (tecla == '*') {                   // borrar lo escrito
+          pinIngresado = "";
+          mostrarPantallaPin();
+        } else if (tecla == '#' && pinIngresado.length() == LONG_PIN) {
+          cambiarEstado(VALIDANDO_PIN);              // confirmar
+        }
+      }
+
+      if (estado == ESPERANDO_PIN && millis() - inicioPin > TIEMPO_LIMITE) {
+        mostrarMensaje("TIEMPO AGOTADO", "");
+        delay(1500);
+        mostrarInicio();
+        cambiarEstado(ESPERANDO_RFID);
+      }
+      break;
+    }
+
+    case VALIDANDO_PIN: {
+      Usuario u;
+      leerUsuario(usuarioActual, u);
+      if (pinIngresado == u.pin) {
+        cambiarEstado(AUTORIZADO);
+      } else {
+        intentos++;
+        if (intentos < MAX_INTENTOS) {
+          mostrarMensaje("PIN INCORRECTO", "");
+          delay(1500);
+          pinIngresado = "";
+          mostrarPantallaPin();
+          inicioPin = millis();
+          cambiarEstado(ESPERANDO_PIN);              // reintento
+        } else {
+          mostrarMensaje("ACCESO DENEGADO", "");
+          cambiarEstado(DENEGADO);
+        }
+      }
+      break;
+    }
+
+    case AUTORIZADO: {
+      mostrarMensaje("ACCESO AUTORIZADO", "* = CERRAR");
+      puerta.write(90);                              // abre la puerta
+      while (teclado.waitForKey() != '*') {}         // espera tecla de cierre
+      puerta.write(0);                               // cierra la puerta
+      delay(600);
+      mostrarInicio();
+      cambiarEstado(ESPERANDO_RFID);
+      break;
+    }
+
+    case DENEGADO: {
+      delay(2000);
+      if (intentos >= MAX_INTENTOS) {
+        cambiarEstado(ALARMA);
+      } else {
+        mostrarInicio();
+        cambiarEstado(ESPERANDO_RFID);
+      }
+      break;
+    }
+
+    case ALARMA: {
+      mostrarMensaje("ACCESO BLOQUEADO", "ALARMA ACTIVADA");
+      digitalWrite(PIN_BUZZER, HIGH);
+      while (teclado.waitForKey() != '#') {}         // espera tecla para apagar
+      digitalWrite(PIN_BUZZER, LOW);
+      intentos = 0;
+      mostrarInicio();
+      cambiarEstado(ESPERANDO_RFID);
+      break;
+    }
+
+    default:
+      break;
+  }
+}
